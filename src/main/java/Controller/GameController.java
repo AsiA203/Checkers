@@ -1,96 +1,145 @@
 package Controller;
 
 import Enums.Color;
+import Enums.MoveResult;
 import Services.MoveValidator;
 import model.Board;
 import model.Coordinate;
 
-import java.util.ArrayList;
 import java.util.HashMap;
 
 public class GameController {
     private Board board;
     private MoveValidator moveValidator;
-    int whiteCaptureCount;
-    int blackCaptureCount;
+    private int whiteCaptureCount;
+    private int blackCaptureCount;
 
-    public GameController(Board board, MoveValidator moveValidator){
+    public GameController(Board board, MoveValidator moveValidator) {
         this.board = board;
         this.moveValidator = moveValidator;
         this.whiteCaptureCount = 0;
         this.blackCaptureCount = 0;
     }
 
-    public void mainController(String move, Color color){
-        ArrayList<Coordinate> coordinates = convertedMovesToBoardCoordinates(move);
-        int fromRow = coordinates.get(0).getRow();
-        int fromColumn = coordinates.get(0).getColumn();
-
-        for (int i = 0; i < coordinates.size(); i++){
-            fromRow = coordinates.get(0).getRow();
-            fromColumn = coordinates.get(0).getColumn();
-        }
+    public int getWhiteCaptureCount() {
+        return whiteCaptureCount;
     }
 
-    //Is stone moving correctly depending on the stone type
-    public boolean isMoveValid(int fromRow, int fromColumn, ArrayList<Coordinate> coordinates, Color color) throws Exception {
-        boolean status = true;
-        if (!board.geStone(fromRow, fromColumn).isKing()){
-            for (int i = 1; i < coordinates.size(); i++){
-                int rowResult = Math.abs(coordinates.get(i).getRow() - fromRow);
-                int columnResult = Math.abs(coordinates.get(i).getColumn() - fromColumn);
-                if (rowResult != columnResult){
-                    status = false;
-                }
+    public int getBlackCaptureCount() {
+        return blackCaptureCount;
+    }
+
+    //main method that coordinates all moves.
+    // IMPORTANT: Always coordinates "FROM" goes first, if both coordinates are needed
+    public MoveResult mainController(String move, Color color) throws Exception {
+        move = move.trim().replace(" ", "");
+        if (move.length() == 6 && move.contains("->")) {
+            Coordinate[] coordinates = convertedMovesToBoardCoordinates(move);
+
+            // Check if coordinates is null before accessing its elements
+            if (coordinates == null || coordinates.length < 2) {
+                return MoveResult.INPUT_FORMAT_ERROR; // Handle the error case
             }
-        } else{
-            //checking kings moves
+
+            Coordinate coordinateFrom = coordinates[0];
+            Coordinate coordinateTo = coordinates[1];
+            Coordinate coordinatePossibleCapture = possibleCaptureCoordinates(coordinateFrom, coordinateTo);
+
+            MoveResult result = moveValidator.isMovePossible(coordinateFrom, coordinateTo, color);
+            switch (result) {
+                case MOVE_OUT_OF_BOUNDS:
+                    return MoveResult.MOVE_OUT_OF_BOUNDS;
+
+                case SQUARE_OCCUPIED:
+                    return MoveResult.SQUARE_OCCUPIED;
+
+                case MOVE_VALID: {
+                    moveStone(coordinateFrom, coordinateTo, color);
+                    isItKingNow(coordinateTo, color);
+                    return MoveResult.MOVE_VALID;
+                }
+
+                case CAPTURE: {
+                    captureStone(coordinatePossibleCapture.getRow(), coordinatePossibleCapture.getColumn(), color);
+                    placeStoneAfterCapture(coordinateFrom, coordinateTo, color);
+                    isItKingNow(coordinateTo, color);
+                    return MoveResult.CAPTURE;
+                }
+
+                case EXTRA_MOVE_REQUIRED: {
+                    captureStone(coordinatePossibleCapture.getRow(), coordinatePossibleCapture.getColumn(), color);
+                    placeStoneAfterCapture(coordinateFrom, coordinateTo, color);
+                    isItKingNow(coordinateTo, color);
+                    return MoveResult.EXTRA_MOVE_REQUIRED;
+                }
+
+                case MOVE_INVALID:
+                    return MoveResult.MOVE_INVALID;
+            }
         }
-        return status;
+        return MoveResult.INPUT_FORMAT_ERROR;
     }
 
+    //place stone after capture function is successful
+    private void placeStoneAfterCapture(Coordinate from, Coordinate to, Color color) throws Exception {
+        board.removeStone(from.getRow(), from.getColumn());
+        board.placeStone(to.getRow(), to.getColumn(), color);
+    }
 
     //moveStone
-    public void moveStone(ArrayList<Coordinate> coordinates, Color color) throws Exception {
-        if (moveValidator.isToSquareEmpty(coordinates)){
-            board.removeStone(coordinates.get(0).getRow(), coordinates.get(0).getColumn());
-            board.placeStone(coordinates.get(coordinates.size()-1).getRow(),coordinates.get(coordinates.size()-1).getColumn(), color);
-            isItKingNow(coordinates, color);
+    private MoveResult moveStone(Coordinate from, Coordinate to, Color color) throws Exception {
+        boolean isMoveValid = moveValidator.isMoveValid(from, to, color);
+        boolean isSquareEmpty = moveValidator.isToSquareEmpty(to);
+        if (isMoveValid && isSquareEmpty) {
+            board.removeStone(from.getRow(), from.getColumn());
+            board.placeStone(to.getRow(), to.getColumn(), color);
+            isItKingNow(to, color);
+        } else if (!isMoveValid) {
+            return MoveResult.MOVE_INVALID;
         }
+        return MoveResult.SQUARE_OCCUPIED;
     }
 
-    public boolean isItKingNow(ArrayList<Coordinate> coordinates, Color color) throws Exception {
-        int lastRow = coordinates.get(coordinates.size()-1).getRow();
-        int lastColumn = coordinates.get(coordinates.size()-1).getColumn();
-
-        if (color == Color.White) {
-            if ((lastRow == 1 || lastRow == 3 || lastRow == 5 || lastRow == 7) && lastColumn == 0){
-                board.makeStoneKing(lastRow, lastColumn);
+    private boolean isItKingNow(Coordinate to, Color color) throws Exception {
+        if (color == Color.WHITE) {
+            if ((to.getRow() == 1 || to.getRow() == 3 || to.getRow() == 5 || to.getRow() == 7) && to.getColumn() == 0) {
+                board.makeStoneKing(to.getRow(), to.getColumn());
             }
+
             return true;
-        }
-
-        if (color == Color.Black) {
-            if ((lastRow == 1 || lastRow == 3 || lastRow == 5 || lastRow == 7) && lastColumn == 7){
-                board.makeStoneKing(lastRow, lastColumn);
+        } else if (color == Color.BLACK) {
+            if ((to.getRow() == 1 || to.getRow() == 3 || to.getRow() == 5 || to.getRow() == 7) && to.getColumn() == 7) {
+                board.makeStoneKing(to.getRow(), to.getColumn());
             }
+
             return true;
         }
         return false;
     }
 
-    //Capture Stone
-    public void captureStone(int row, int column, Color color) throws Exception {
-        if (color == Color.White){
-            board.removeStone(row, column);
-            whiteCaptureCount++;
+    //Capture Stone and increase counters
+    private void captureStone(int row, int column, Color color) throws Exception {
+        if (color == Color.WHITE) {
+            if (board.geStone(row, column) != null && board.geStone(row, column).getColor() != color) {
+                board.removeStone(row, column);
+                whiteCaptureCount++;
+            }
         } else {
-            board.removeStone(row, column);
-            blackCaptureCount++;
+            if (board.geStone(row, column) != null && board.geStone(row, column).getColor() != color) {
+                board.removeStone(row, column);
+                blackCaptureCount++;
+            }
         }
     }
 
-    public ArrayList<Coordinate> convertedMovesToBoardCoordinates(String move){
+    private Coordinate possibleCaptureCoordinates(Coordinate from, Coordinate to) {
+        int middleRow = (from.getRow() + to.getRow()) / 2;
+        int middleCol = (from.getColumn() + to.getColumn()) / 2;
+
+        return new Coordinate(middleRow, middleCol);
+    }
+
+    private Coordinate[] convertedMovesToBoardCoordinates(String move) {
         HashMap<String, Integer> columnCoordinates = new HashMap<>();
         columnCoordinates.put("A", 0);
         columnCoordinates.put("B", 1);
@@ -101,13 +150,17 @@ public class GameController {
         columnCoordinates.put("G", 6);
         columnCoordinates.put("H", 7);
 
-        String [] moveStringSplit = move.trim().replace(" ", "").split("->");
-        ArrayList<Coordinate> convertedMoves = new ArrayList<>(moveStringSplit.length);
-
-        for (String s : moveStringSplit){
-            // adding row and column converted coordinates
-            convertedMoves.add(new Coordinate(8 - Integer.parseInt(s.substring(1)),columnCoordinates.get(s.substring(0,1))));
+        String[] moveStringSplit = move.trim().replace(" ", "").split("->");
+        Coordinate[] convertedMoves = new Coordinate[2];
+        try {
+            for (int i = 0; i < moveStringSplit.length; i++) {
+                // adding row and column converted coordinates
+                convertedMoves[i] = new Coordinate(8 - Integer.parseInt(moveStringSplit[i].substring(1)), columnCoordinates.get(moveStringSplit[i].substring(0, 1)));
+            }
+        } catch (NumberFormatException | NullPointerException exception) {
+            return null;
         }
+
         return convertedMoves;
     }
 }

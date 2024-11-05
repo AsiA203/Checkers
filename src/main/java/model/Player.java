@@ -6,11 +6,17 @@ public class Player {
     String name;
     Color color;
 
-    public Player(String name,Color color) {
-        this.name = name;
+    public Player(){
+
+    }
+
+    public Player(Color color) {
         this.color = color;
     }
 
+    public void setName(String name){
+        this.name = name;
+    }
     public String getName() {
         return name;
     }
